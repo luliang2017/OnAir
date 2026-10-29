@@ -4,8 +4,8 @@
 name: CI
 
 on:
-  push:
-    branches: ['main', '0.2.8']
+  # Auto-build on push disabled: CI here only runs when started by hand
+  # (Actions tab > CI > Run workflow). Push to main/0.2.8 no longer triggers it.
   workflow_dispatch:
 
 # A newer push cancels the run still going for an older one.
