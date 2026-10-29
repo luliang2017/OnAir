@@ -1,0 +1,59 @@
+# Windows build, MSYS2 native: builds OnAir on a windows-2022 runner in the MSYS2 UCRT64 environment and
+# produces the portable .zip (and the NSIS installer when makensis works). Unlike windows-release.yml this
+# needs NO private vendor tarballs: every dependency comes from MSYS2 pacman packages, so it always runs.
+#
+# Trade-offs vs the cross-compiled release package (windows-release.yml):
+#   - MSYS2's FFmpeg is built with --enable-gpl, so the LGPL release check is bypassed with
+#     ONAIR_WIN_ALLOW_GPL_FFMPEG=1: the zip is for testing, do not publish it as a release.
+#   - Only the radio libraries pacman offers are bundled (rtl-sdr, airspy, airspyhf, bladeRF, libiio,
+#     LimeSuite, whichever install); the full cross prefix ships more (FTDI, Hamlib, ...).
+#
+# Run by hand: Actions tab > Windows build (MSYS2) > Run workflow (optionally give a version).
+name: Windows build (MSYS2)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to package (e.g. 0.2.6). Leave empty to use the project() version in CMakeLists.txt."
+        required: false
+        default: ""
+
+# A newer run replaces the build still going, so no stale artifact is uploaded after it.
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows x64 (MSYS2 UCRT64)
+    runs-on: windows-2022
+    defaults: { run: { shell: 'msys2 {0}' } }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64   # the MINGW64 environment has no hackrf and soapysdr packages
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-ffmpeg mingw-w64-ucrt-x86_64-glfw
+            mingw-w64-ucrt-x86_64-hackrf mingw-w64-ucrt-x86_64-soapysdr mingw-w64-ucrt-x86_64-libiconv
+            zip nsis
+      # Radio libraries pacman offers are bundled too (make_windows.sh ships whichever are present).
+      # Install them one by one, so a package MSYS2 does not have never stops the build.
+      - name: Install radio libraries (best effort)
+        run: |
+          for p in rtl-sdr airspyone_host airspyhf bladerf libiio limesuite; do
+            pacman -S --needed --noconfirm "mingw-w64-ucrt-x86_64-$p" 2>/dev/null || echo "note: MSYS2 has no package for $p (that radio is not bundled)"
+          done
+      - name: Build Windows zip and installer
+        env:
+          ONAIR_WIN_ALLOW_GPL_FFMPEG: "1"   # MSYS2 FFmpeg is a GPL build: test zip only, do not publish
+        run: tools/package/make_windows.sh "${{ inputs.version }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-x64-msys2
+          path: |
+            build-windows/OnAir-*-windows-x64.zip
+            build-windows/OnAir-*-windows-x64-setup.exe
