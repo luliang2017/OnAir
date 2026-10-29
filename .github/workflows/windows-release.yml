@@ -1,0 +1,70 @@
+# Windows release, standalone: cross-compiles OnAir for Windows x64 on a macOS runner with mingw-w64 and
+# produces the portable .zip and the NSIS installer, then uploads them as artifacts. This is the Windows half
+# of release.yml pulled out so it can be built on its own (a tag push, a release branch, or by hand) without
+# waiting for the macOS/Linux/Android/Docker jobs.
+#
+# Triggers
+#   - a push of a version tag (v0.2.6) or a release branch (release-0.2.6): build the Windows package;
+#   - Run workflow by hand: Actions tab > Windows release > Run workflow (optionally give a version).
+#
+# Requirements (same as release.yml's windows job)
+#   - the Windows dependency prefix is built from the vendor tarballs in build-windows-deps/src, which live on
+#     the maintainer's machines and are NOT in the repository. The deps step fails fast with a clear message
+#     ("build-windows-deps/src is missing") when they are absent, so a run without them stops before the long compile.
+#   - set the repository variable ONAIR_WINDOWS_IN_ACTIONS=true to let this workflow run on tag/branch pushes;
+#     a manual workflow_dispatch run is not gated.
+name: Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - 'release-*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to package (e.g. 0.2.6). Leave empty to use the project() version in CMakeLists.txt."
+        required: false
+        default: ""
+
+# A newer push on the same branch cancels the build still running, so an older package is not uploaded after it.
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows x64 package
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install cross toolchain
+        run: |
+          brew install cmake pkg-config nasm mingw-w64
+          rustup target add x86_64-pc-windows-gnu   # the Rust protocol layers (rust/README.md) are linked into the exe
+      - name: Cache Windows cross prefix
+        id: winpfx
+        uses: actions/cache@v6
+        with:
+          path: onair-win-prefix
+          key: onair-win-prefix-${{ hashFiles('tools/package/cross_deps_windows.sh', 'packaging/windows/mingw-toolchain.cmake') }}
+      - name: Build Windows dependencies
+        if: steps.winpfx.outputs.cache-hit != 'true'
+        env:
+          ONAIR_WIN_PREFIX: ${{ github.workspace }}/onair-win-prefix
+          ONAIR_WIN_WORK: ${{ runner.temp }}/onair-win-work
+        run: |
+          test -d build-windows-deps/src || { echo "error: build-windows-deps/src is missing (vendor tarballs for cross_deps_windows.sh)"; exit 1; }
+          tools/package/cross_deps_windows.sh
+      - name: Build Windows zip and installer
+        env:
+          ONAIR_WIN_PREFIX: ${{ github.workspace }}/onair-win-prefix
+          ONAIR_WIN_BUILD: build-windows
+        run: tools/package/make_windows_cross.sh "${{ inputs.version }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-x64
+          path: |
+            build-windows/OnAir-*-windows-x64.zip
+            build-windows/OnAir-*-windows-x64-setup.exe
