@@ -39,7 +39,7 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-ffmpeg mingw-w64-ucrt-x86_64-glfw
             mingw-w64-ucrt-x86_64-hackrf mingw-w64-ucrt-x86_64-soapysdr mingw-w64-ucrt-x86_64-libiconv
-            zip mingw-w64-ucrt-x86_64-nsis
+            mingw-w64-ucrt-x86_64-rust zip mingw-w64-ucrt-x86_64-nsis
       # Radio libraries pacman offers are bundled too (make_windows.sh ships whichever are present).
       # Install them one by one, so a package MSYS2 does not have never stops the build.
       - name: Install radio libraries (best effort)
